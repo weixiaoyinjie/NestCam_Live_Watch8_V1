@@ -15,6 +15,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Restore NestCam app source from one ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f NestCam_Source_Bundle.zip ]]; then
+            echo "::error::仓库根目录缺少 NestCam_Source_Bundle.zip，请先上传源码 ZIP 文件"
+            exit 1
+          fi
+          unzip -oq NestCam_Source_Bundle.zip -d .
+          for f in settings.gradle build.gradle mobile/build.gradle wear/build.gradle shared/build.gradle; do
+            if [[ ! -f "$f" ]]; then
+              echo "::error::解压后的项目缺少 $f"
+              exit 1
+            fi
+          done
+          echo "✅ 手机、手表、shared 模块源码已解压"
+
       - name: JDK 17
         uses: actions/setup-java@v4
         with:
