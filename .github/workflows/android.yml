@@ -15,22 +15,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Restore NestCam app source from one ZIP
+      - name: Restore fixed NestCam source ZIP
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! -f NestCam_Source_Bundle.zip ]]; then
-            echo "::error::仓库根目录缺少 NestCam_Source_Bundle.zip，请先上传源码 ZIP 文件"
+          SOURCE_ZIP="NestCam_Source_Bundle-1.zip"
+          if [[ ! -f "$SOURCE_ZIP" ]]; then
+            echo "::error::Missing fixed source ZIP: $SOURCE_ZIP"
             exit 1
           fi
-          unzip -oq NestCam_Source_Bundle.zip -d .
+          echo "Using $SOURCE_ZIP"
+          unzip -oq "$SOURCE_ZIP" -d .
           for f in settings.gradle build.gradle mobile/build.gradle wear/build.gradle shared/build.gradle; do
             if [[ ! -f "$f" ]]; then
-              echo "::error::解压后的项目缺少 $f"
+              echo "::error::Missing source file: $f"
               exit 1
             fi
           done
-          echo "✅ 手机、手表、shared 模块源码已解压"
+          if ! grep -q 'LinearLayout.LayoutParams videoParams=' wear/src/main/java/com/nestcam/watch8/wear/WatchActivity.java; then
+            echo "::error::This is not the WatchActivity.java fixed V1.1 source (videoParams absent)."
+            exit 1
+          fi
+          echo "Fixed source V1.1 restored successfully"
 
       - name: JDK 17
         uses: actions/setup-java@v4
@@ -38,8 +44,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # GitHub ubuntu-24.04 already includes the Android SDK.
-      # Avoid android-actions/setup-android@v3: it failed during SDK tool setup.
       - name: Android SDK (preinstalled)
         shell: bash
         run: |
@@ -47,13 +51,12 @@ jobs:
           SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
-          echo "SDK path: $SDK"
           ls -1 "$SDK/platforms" || true
           ls -1 "$SDK/build-tools" || true
           if [[ ! -d "$SDK/platforms/android-35" || ! -d "$SDK/build-tools/35.0.0" ]]; then
             SDKMANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
             if [[ ! -x "$SDKMANAGER" ]]; then
-              echo "::error::Android SDK manager not found: $SDKMANAGER"
+              echo "::error::Missing sdkmanager at $SDKMANAGER"
               exit 1
             fi
             yes | "$SDKMANAGER" --sdk_root="$SDK" --licenses >/dev/null || true
