@@ -1,77 +1,61 @@
-name: Build NestCam V3 Fullscreen OneTap
+name: Build Wear Fullscreen
 
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    paths:
+      - 'NestCam_Watch8_Fullscreen_OneUpload.zip'
+      - 'wear/**'
+      - 'shared/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'gradle.properties'
+      - '.github/workflows/build-wear-fullscreen.yml'
 
 jobs:
-  build:
-    runs-on: ubuntu-24.04
+  wear-apk:
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Restore V3 source
-        shell: bash
-        run: |
-          set -euo pipefail
-          SOURCE_ZIP='NestCam_Source_Bundle_V3_OneTap.zip'
-          test -f "$SOURCE_ZIP" || { echo "::error::Upload $SOURCE_ZIP to repository root first"; exit 1; }
-          unzip -oq "$SOURCE_ZIP" -d .
-          for file in settings.gradle build.gradle mobile/build.gradle wear/build.gradle shared/build.gradle; do
-            test -f "$file" || { echo "::error::Missing $file"; exit 1; }
-          done
-          grep -q '一键查看 backyard' mobile/src/main/java/com/nestcam/watch8/mobile/MainActivity.java || {
-            echo '::error::V3 phone fullscreen source not found'; exit 1;
-          }
-          grep -q 'private void immersive()' wear/src/main/java/com/nestcam/watch8/wear/WatchActivity.java || {
-            echo '::error::Watch8 fullscreen source not found'; exit 1;
-          }
-          echo 'V3 mobile + Watch8 sources ready'
-
-      - name: JDK 17
+      - name: Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Android SDK (preinstalled)
-        shell: bash
-        run: |
-          set -euo pipefail
-          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
-          if [[ ! -d "$SDK/platforms/android-35" || ! -d "$SDK/build-tools/35.0.0" ]]; then
-            SDKMANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
-            test -x "$SDKMANAGER" || { echo "::error::sdkmanager not found"; exit 1; }
-            yes | "$SDKMANAGER" --sdk_root="$SDK" --licenses >/dev/null || true
-            "$SDKMANAGER" --sdk_root="$SDK" 'platforms;android-35' 'build-tools;35.0.0'
-          fi
-          test -d "$SDK/platforms/android-35"
-          test -d "$SDK/build-tools/35.0.0"
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Android API 35
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
 
       - name: Gradle 8.11.1
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
 
-      - name: Compile phone and Watch8
-        run: gradle --no-daemon :mobile:assembleDebug :wear:assembleDebug
+      - name: Prepare project
+        shell: bash
+        run: |
+          if [[ -f NestCam_Watch8_Fullscreen_OneUpload.zip ]]; then
+            mkdir -p extracted-source
+            unzip -oq NestCam_Watch8_Fullscreen_OneUpload.zip -d extracted-source
+            echo 'PROJECT_DIR=extracted-source' >> "$GITHUB_ENV"
+          else
+            echo 'PROJECT_DIR=.' >> "$GITHUB_ENV"
+          fi
 
-      - name: Upload phone APK
+      - name: Build watch APK only
+        shell: bash
+        run: gradle -p "$PROJECT_DIR" :wear:assembleDebug --no-daemon --stacktrace
+
+      - name: Upload Wear OS APK
         uses: actions/upload-artifact@v4
         with:
-          name: nestcam-mobile-v3-debug-apk
-          path: mobile/build/outputs/apk/debug/mobile-debug.apk
-          if-no-files-found: error
-
-      - name: Upload Watch8 APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: nestcam-watch8-v3-debug-apk
-          path: wear/build/outputs/apk/debug/wear-debug.apk
+          name: NestCam-Watch8-Fullscreen-APK
+          path: ${{ env.PROJECT_DIR }}/wear/build/outputs/apk/debug/wear-debug.apk
           if-no-files-found: error
